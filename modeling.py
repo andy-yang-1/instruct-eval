@@ -2,7 +2,7 @@ import json
 import signal
 import time
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 import openai
 import rwkv
@@ -27,6 +27,8 @@ from transformers import (
     AutoModel,
     LlamaConfig,
 )
+from vllm import LLM, SamplingParams
+
 
 import quant
 
@@ -38,6 +40,9 @@ class EvalModel(BaseModel, arbitrary_types_allowed=True):
 
     def run(self, prompt: str, **kwargs) -> str:
         raise NotImplementedError
+    
+    def run_batch(self, prompts: List[str], **kwargs) -> List[str]:
+        return [self.run(prompt, **kwargs) for prompt in prompts]
 
     def count_text_length(self, text: str) -> int:
         raise NotImplementedError
@@ -229,6 +234,42 @@ class CausalModel(SeqToSeqModel):
         B_index = self.tokenizer("B", add_special_tokens=False).input_ids[0]
         A = float(predictions[A_index].cpu())
         B = float(predictions[B_index].cpu())
+        return A, B
+
+
+class VllmModel(EvalModel):
+    llm: Optional[LLM] = None
+    sampling_params: Optional[SamplingParams] = None
+
+    def load(self):
+        if self.llm is None:
+            self.llm = LLM(model=self.model_path)
+            self.sampling_params = SamplingParams(temperature=0.8, top_p=0.95)
+
+    def run(self, prompt: str, **kwargs) -> str:
+        self.load()
+        output = self.llm.generate(prompt, self.sampling_params, use_tqdm=False)
+        return output[0].outputs[0].text
+    
+    def run_batch(self, prompts: List[str], **kwargs) -> List[str]:
+        self.load()
+        outputs = self.llm.generate(prompts, self.sampling_params, use_tqdm=False)
+        return [output.outputs[0].text for output in outputs]
+    
+    def count_text_length(self, text: str) -> int:
+        self.load()
+        tokenizer = self.llm.get_tokenizer()
+        return len(tokenizer.encode(text))
+    
+    def get_choice(self, text: str, **kwargs) -> Tuple[float, float]:
+        self.load()
+        self.sampling_params = SamplingParams(temperature=0.8, top_p=0.95, logprobs=200)
+        output = self.llm.generate(text, self.sampling_params, use_tqdm=False)
+        tokenizer = self.llm.get_tokenizer()
+        A_index = tokenizer("A", add_special_tokens=False).input_ids[0]
+        B_index = tokenizer("B", add_special_tokens=False).input_ids[0]
+        A = float(output[0].outputs[0].logprobs[0][A_index]) if A_index in output[0].outputs[0].logprobs[0] else 0.0
+        B = float(output[0].outputs[0].logprobs[0][B_index]) if B_index in output[0].outputs[0].logprobs[0] else 0.0
         return A, B
 
 
@@ -498,6 +539,7 @@ def select_model(model_name: str, **kwargs) -> EvalModel:
         openai=OpenAIModel,
         rwkv=RWKVModel,
         gptq=GPTQModel,
+        vllm=VllmModel,
     )
     model_class = model_map.get(model_name)
     if model_class is None:
