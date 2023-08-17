@@ -1,9 +1,12 @@
+import asyncio
 import json
 import signal
 import time
 from pathlib import Path
+import requests
 from typing import Optional, Tuple, List
 
+import httpx
 import openai
 import rwkv
 import tiktoken
@@ -271,6 +274,58 @@ class VllmModel(EvalModel):
         A = float(output[0].outputs[0].logprobs[0][A_index]) if A_index in output[0].outputs[0].logprobs[0] else 0.0
         B = float(output[0].outputs[0].logprobs[0][B_index]) if B_index in output[0].outputs[0].logprobs[0] else 0.0
         return A, B
+
+class LightllmModel(EvalModel):
+    api_url: str = None
+    tokenizer: Optional[PreTrainedTokenizer]
+
+    def load(self):
+        if self.tokenizer is None:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, use_fast=True)
+            self.api_url = "http://localhost:8000/generate"
+            self.max_input_length = 100000
+            print("load success")
+
+    def run(self, prompt: str, **kwargs) -> str:
+        self.load()
+        headers = {'Content-Type': 'application/json'}
+        pload = {
+            'inputs': prompt,
+            "parameters": {
+                'do_sample': False,
+                'ignore_eos': False,
+                'max_new_tokens': 2,
+            }
+        }
+        response = requests.post(self.api_url, headers=headers, json=pload, stream=False)
+        text = response.json()['generated_text'][0]
+        return text
+
+    async def async_run(self, prompt: str, **kwargs) -> str:
+        headers = {'Content-Type': 'application/json'}
+        pload = {
+            'inputs': prompt,
+            "parameters": {
+                'do_sample': False,
+                'ignore_eos': False,
+                'max_new_tokens': 2,
+            }
+        }
+        async with httpx.AsyncClient(timeout=None) as client:
+            response = await client.post(self.api_url, headers=headers, json=pload)
+        text = response.json()['generated_text'][0]
+        return text
+    
+    async def _async_run_batch(self, prompts: List[str], **kwargs) -> List[str]:
+        tasks: List[asyncio.Task] = [self.async_run(prompt, **kwargs) for prompt in prompts]
+        return await asyncio.gather(*tasks)
+
+    def run_batch(self, prompts: List[str], **kwargs) -> List[str]:
+        return asyncio.run(self._async_run_batch(prompts, **kwargs))
+    
+    def count_text_length(self, text: str) -> int:
+        self.load()
+        return len(self.tokenizer.encode(text))
 
 
 class LlamaModel(SeqToSeqModel):
@@ -540,6 +595,7 @@ def select_model(model_name: str, **kwargs) -> EvalModel:
         rwkv=RWKVModel,
         gptq=GPTQModel,
         vllm=VllmModel,
+        lightllm=LightllmModel,
     )
     model_class = model_map.get(model_name)
     if model_class is None:
