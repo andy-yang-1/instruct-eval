@@ -32,13 +32,16 @@ def main(task_name: str, **kwargs):
     else:
         print("Using lm-eval")
         model_name = kwargs.pop("model_name")
+        model = "hf" if model_name in ["causal", "seq_to_seq"] else "llama"
+        model = "lightllm" if model_name == "lightllm" else model
         results = evaluator.simple_evaluate(
-            model="hf" if model_name in ["causal", "seq_to_seq"] else "llama",
+            model=model,
             model_args=f"pretrained={kwargs.pop('model_path')}",
             tasks=[task_name],
             num_fewshot=kwargs.get("ntrain", 0),
             batch_size=1,
             no_cache=True,
+            limit=kwargs.get("ntest", None),
             device="0",
         )
         print(evaluator.make_table(results))
