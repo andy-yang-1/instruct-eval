@@ -8,6 +8,7 @@ from argparse import Namespace
 import numpy as np
 import pandas as pd
 from fire import Fire
+import torch
 from tqdm import tqdm
 
 from modeling import select_model, EvalModel
@@ -133,28 +134,41 @@ def gen_prompt(train_df, subject, k=-1):
     return prompt
 
 
-def evaluate(args, subject, model: EvalModel, dev_df, test_df):
+def evaluate(args, subject, model: EvalModel, dev_df, test_df, batch_size=1):
     cors = []
     all_probs = []
 
-    for i in range(test_df.shape[0]):
-        # get prompt and make sure it fits
-        k = args.ntrain
-        prompt_end = format_example(test_df, i, include_answer=False)
-        train_prompt = gen_prompt(dev_df, subject, k)
-        prompt = train_prompt + prompt_end
+    num_batches = int(np.ceil(test_df.shape[0] / float(batch_size)))
 
-        while not model.check_valid_length(prompt) and k > 0:
-            k -= 1
+    for batch_idx in range(num_batches):
+        start_idx = batch_idx * batch_size
+        end_idx = min((batch_idx + 1) * batch_size, test_df.shape[0])
+
+        batch_prompts = []
+        batch_labels = []
+        for i in range(start_idx, end_idx):
+            # get prompt and make sure it fits
+            k = args.ntrain
+            prompt_end = format_example(test_df, i, include_answer=False)
             train_prompt = gen_prompt(dev_df, subject, k)
             prompt = train_prompt + prompt_end
 
-        label = test_df.iloc[i, test_df.shape[1] - 1]
-        pred = model.run(prompt)
-        probs = [0 for _ in get_choices()]
-        cor = pred.strip().startswith(label)
-        cors.append(cor)
-        all_probs.append(probs)
+            while not model.check_valid_length(prompt) and k > 0:
+                k -= 1
+                train_prompt = gen_prompt(dev_df, subject, k)
+                prompt = train_prompt + prompt_end
+
+            label = test_df.iloc[i, test_df.shape[1] - 1]
+            batch_prompts.append(prompt)
+            batch_labels.append(label)
+
+        preds = model.run_batch(batch_prompts)
+        for pred, label in zip(preds, batch_labels):
+            probs = [0 for _ in get_choices()]
+            cor = pred.strip().startswith(label)
+            cors.append(cor)
+            all_probs.append(probs)
+        torch.cuda.empty_cache()
 
     acc = np.mean(cors)
     cors = np.array(cors)
@@ -163,6 +177,7 @@ def evaluate(args, subject, model: EvalModel, dev_df, test_df):
     print("Average accuracy {:.3f} - {}".format(acc, subject))
 
     return cors, acc, all_probs
+
 
 
 def main(data_dir: str = "data/mmlu", ntrain: int = 5, **kwargs):
