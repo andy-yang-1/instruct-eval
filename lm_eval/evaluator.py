@@ -232,7 +232,10 @@ def evaluate(
         #       they should end up next to each other.
 
         print("Running", reqtype, "requests")
+        # print(reqs[0])
+        reqs = reqs[0:10]
         resps = getattr(lm, reqtype)([req.args for req in reqs])
+        print(resps)
         resps = [
             x if req.index is None else x[req.index] for x, req in zip(resps, reqs)
         ]

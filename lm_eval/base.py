@@ -353,6 +353,8 @@ class BaseLM(LM):
 
             res.append(s)
 
+        return re_ord.get_original(res)
+
 
 class Task(abc.ABC):
     """A task represents an entire benchmark including its dataset, problems,
