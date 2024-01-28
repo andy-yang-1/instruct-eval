@@ -343,27 +343,15 @@ class BaseLM(LM):
             if isinstance(until, str):
                 until = [until]
 
-            (primary_until,) = self.tok_encode(until[0])
-
-            context_enc = torch.tensor(
-                [self.tok_encode(context)[self.max_gen_toks - self.max_length :]]
-            ).to(self.device)
+            context_enc = torch.tensor([self.tok_encode(context)]).cuda()
 
             cont = self._model_generate(
-                context_enc, context_enc.shape[1] + self.max_gen_toks, primary_until
+                context_enc, context_enc.shape[1] + self.max_gen_toks, 2
             )
 
-            s = self.tok_decode(cont[0].tolist()[context_enc.shape[1] :])
-
-            for term in until:
-                s = s.split(term)[0]
-
-            # partial caching
-            self.cache_hook.add_partial("greedy_until", (context, until), s)
+            s = self.tok_decode(cont[0].tolist()[context_enc.shape[1] :-1])
 
             res.append(s)
-
-        return re_ord.get_original(res)
 
 
 class Task(abc.ABC):

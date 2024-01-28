@@ -13,13 +13,17 @@ class LlamaLM(BaseLM):
         subfolder=None,
         tokenizer=None,
         batch_size=1,
-        load_8bit=True,
+        load_8bit=False,
+        sparse_mode=None,
     ):
         super().__init__()
 
         assert isinstance(device, str)
         assert isinstance(pretrained, str)
         assert isinstance(batch_size, int)
+
+        assert sparse_mode in [None, "ds", "h2o", "sparq"], f"Invalid sparse mode {sparse_mode}"
+
         self.batch_size_per_gpu = batch_size
 
         if device:
@@ -43,6 +47,11 @@ class LlamaLM(BaseLM):
             self.model = LlamaForCausalLM.from_pretrained(
                 pretrained, revision=revision, device_map="auto", load_in_8bit=True
             )
+        else:
+            print(pretrained, revision)
+            self.model = LlamaForCausalLM.from_pretrained(
+                    pretrained, revision=revision, torch_dtype=torch.float16, device_map="auto"
+                )
         self.model.eval()
 
         self.tokenizer = LlamaTokenizer.from_pretrained(
