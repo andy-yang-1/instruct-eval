@@ -39,6 +39,7 @@ def main(task_name: str, **kwargs):
             num_fewshot=kwargs.get("ntrain", 0),
             batch_size=1,
             no_cache=True,
+            limit=kwargs.get("nsample", None),
             device="0",
         )
         print(evaluator.make_table(results))

@@ -53,7 +53,7 @@ class CoQA(Task):
         # and a question qi, the task is to predict the answer ai
         doc_text = doc["story"] + "\n\n"
         for (q, a) in zip_longest(
-            doc["questions"]["input_text"], doc["answers"]["input_text"][:-1]
+            doc["questions"], doc["answers"]["input_text"][:-1]
         ):  # omit target answer ai
             question = f"Q: {q}\n\n"
             answer = f"A: {a}\n\n" if a is not None else "A:"
@@ -123,7 +123,7 @@ class CoQA(Task):
     def doc_to_target(self, doc, turnid=None):
         # Default to prediction of last turn.
         if turnid is None:
-            turnid = len(doc["questions"]["input_text"])
+            turnid = len(doc["questions"])
         raw_text = doc["answers"]["input_text"][turnid - 1]
         return " " + raw_text
 
@@ -151,7 +151,7 @@ class CoQA(Task):
         :param results:
             The results of the requests created in construct_requests.
         """
-        turn_id = len(doc["questions"]["input_text"])
+        turn_id = len(doc["questions"])
         gold_list = self.get_answers(doc, turn_id)
         pred = results[0].strip().split("\n")[0]
 
