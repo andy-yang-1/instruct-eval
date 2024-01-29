@@ -351,6 +351,10 @@ class BaseLM(LM):
 
             s = self.tok_decode(cont[0].tolist()[context_enc.shape[1] :-1])
 
+            # use re to fix greedy_until
+            if until[0] is not None:
+                s = re.split(until[0], s)[0]
+
             res.append(s)
 
         return re_ord.get_original(res)

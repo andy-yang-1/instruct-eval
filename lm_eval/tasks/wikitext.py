@@ -83,7 +83,9 @@ class WikiText(PerplexityTask):
         return map(self._process_doc, self.dataset["test"])
 
     def _process_doc(self, doc):
-        return doc["page"]
+        # print(doc)
+        # return doc["page"]
+        return doc["text"]
 
     def doc_to_target(self, doc):
         return wikitext_detokenizer(doc)

@@ -1,7 +1,12 @@
+import json
 import torch
-from transformers import LlamaForCausalLM, LlamaTokenizer
+from transformers import LlamaForCausalLM, LlamaTokenizer, LlamaConfig
 
 from lm_eval.base import BaseLM
+
+from lm_eval.models.modify_llama import convert_kvcache_llama_heavy_recent, convert_llama_channel_config, change_llama_heavy_const
+from lm_eval.models.h2o_llama import convert_h2o, reset_h2o
+from lm_eval.models.sparq_llama import convert_sparq, change_sparq_para
 
 
 class LlamaLM(BaseLM):
@@ -14,7 +19,10 @@ class LlamaLM(BaseLM):
         tokenizer=None,
         batch_size=1,
         load_8bit=False,
-        sparse_mode=None,
+        sparse_mode="ds",
+        # sparse_mode="h2o",
+        # sparse_mode="sparq",
+        # sparse_mode=None,
     ):
         super().__init__()
 
@@ -23,6 +31,7 @@ class LlamaLM(BaseLM):
         assert isinstance(batch_size, int)
 
         assert sparse_mode in [None, "ds", "h2o", "sparq"], f"Invalid sparse mode {sparse_mode}"
+        self.sparse_mode = sparse_mode
 
         self.batch_size_per_gpu = batch_size
 
@@ -52,6 +61,25 @@ class LlamaLM(BaseLM):
             self.model = LlamaForCausalLM.from_pretrained(
                     pretrained, revision=revision, torch_dtype=torch.float16, device_map="auto"
                 )
+            
+
+        config = LlamaConfig.from_pretrained(pretrained, revision=revision)
+        if self.sparse_mode == "ds":
+            self.model = convert_kvcache_llama_heavy_recent(self.model, config, 128, 4, 4)
+            channel_path = "/home/ec2-user/DoubleSparse/llama2-7b-chat-qk-channel-config.json"
+            channel_config = None
+            with open(channel_path, "r") as f:
+                channel_config = json.load(f)
+            self.model = convert_llama_channel_config(self.model, channel_config, "qk")
+        elif self.sparse_mode == "h2o":
+            config.heavy_ratio = 0.25
+            config.recent_ratio = 0.1
+            self.model = convert_h2o(self.model, config)
+        elif self.sparse_mode == "sparq":
+            k = 128
+            r = 16
+            self.model = convert_sparq(self.model, config, k, r)
+
         self.model.eval()
 
         self.tokenizer = LlamaTokenizer.from_pretrained(
@@ -98,10 +126,23 @@ class LlamaLM(BaseLM):
         returns: a torch tensor of shape [batch, sequence, vocab] with the
         logits returned from the model
         """
+        # print(inps.shape)
+        if self.sparse_mode == "h2o":
+            self.model = reset_h2o(self.model)
+        elif self.sparse_mode == "ds":
+            self.model = change_llama_heavy_const(self.model, inps.shape[-1] // 16 ,4,4)
+        elif self.sparse_mode == "sparq":
+            self.model = change_sparq_para(self.model, inps.shape[-1] // 8, 16)
         with torch.no_grad():
             return self.model(inps)[0]
 
     def _model_generate(self, context, max_length, eos_token_id):
+        if self.sparse_mode == "h2o":
+            self.model = reset_h2o(self.model)
+        elif self.sparse_mode == "ds":
+            self.model = change_llama_heavy_const(self.model, context.shape[-1] // 16 ,4,4)
+        elif self.sparse_mode == "sparq":
+            self.model = change_sparq_para(self.model, context.shape[-1] // 8, 16)
         return self.model.generate(
             context, max_length=max_length, eos_token_id=eos_token_id, do_sample=False
         )

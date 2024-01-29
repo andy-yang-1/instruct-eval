@@ -79,7 +79,8 @@ class GradeSchoolMath8K(Task):
         """
         # NOTE: The paper implements "verifiers" that assign a score to multiple
         # solutions and output the highest ranked solution.
-        completion = rf.greedy_until(ctx, ["\n"])
+        # completion = rf.greedy_until(ctx, ["\n"])
+        completion = rf.greedy_until(ctx, [None])
         return completion
 
     def _extract_answer(self, completion):

@@ -2,3 +2,6 @@
 *.jsonl
 data/
 *.csv
+lm_eval/models/modify_llama.py
+lm_eval/models/h2o_llama.py
+lm_eval/models/sparq_llama.py
