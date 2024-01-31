@@ -343,7 +343,7 @@ class BaseLM(LM):
             if isinstance(until, str):
                 until = [until]
 
-            context_enc = torch.tensor([self.tok_encode(context)]).cuda()
+            context_enc = torch.tensor([self.tok_encode(context)]).to(self.device())
 
             cont = self._model_generate(
                 context_enc, context_enc.shape[1] + self.max_gen_toks, 2

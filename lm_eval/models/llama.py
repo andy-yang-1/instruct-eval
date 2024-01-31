@@ -59,8 +59,8 @@ class LlamaLM(BaseLM):
         else:
             print(pretrained, revision)
             self.model = LlamaForCausalLM.from_pretrained(
-                    pretrained, revision=revision, torch_dtype=torch.float16, device_map="auto"
-                )
+                    pretrained, revision=revision, torch_dtype=torch.float16
+                ).to(self._device)
             
 
         config = LlamaConfig.from_pretrained(pretrained, revision=revision)
